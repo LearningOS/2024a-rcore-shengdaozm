@@ -262,6 +262,63 @@ impl MemorySet {
             false
         }
     }
+
+    /// map a new area
+    pub fn map(&mut self, start:usize , len: usize, port : usize) ->isize {
+        let virt_addr_start = VirtAddr::from(start);
+        let virt_addr_end = VirtAddr::from(start + len);
+        // [start, start + len) has already mapped pages
+        for area in &self.areas {
+            let left = area.vpn_range.get_start();
+            let right = area.vpn_range.get_end();
+            if right >virt_addr_start.floor() && left < virt_addr_end.ceil() {return -1;}
+        }
+        let mut flag = MapPermission::empty();
+        flag |= MapPermission::U;
+        if port & 0x01 == 0x01 {
+            flag |= MapPermission::R;
+        }
+        if port & 0x02 == 0x02 {
+            flag |= MapPermission::W;
+        }
+        if port & 0x04 == 0x04 {
+            flag |= MapPermission::X;
+        }
+        self.insert_framed_area(virt_addr_start, virt_addr_end, flag);
+        0
+    }
+
+    /// unmap a area
+    pub fn unmap(&mut self, start:usize,len: usize) ->isize {
+        let virt_addr_start = VirtAddr::from(start);
+        let virt_addr_end = VirtAddr::from(start + len);
+        //println!("unmap {:#x} - {:#x}=====>", start, start + len);
+        //if !virt_addr_end.aligned() {
+        //    println!("bad unmap end address=====>");
+        //}
+        //check the page is aligned
+        if !virt_addr_start.aligned() || !virt_addr_end.aligned() {
+            return -1;
+        }
+        let virtual_page_start = virt_addr_start.floor();
+        let virtual_page_end = virt_addr_end.ceil();
+        let mut id:isize=0;
+        let mut delete_id: isize=-1;
+        for area in self.areas.iter_mut() {
+            let left = area.vpn_range.get_start();
+            let right = area.vpn_range.get_end();
+            if left <= virtual_page_start && right <= virtual_page_end {
+                delete_id=id;
+            }
+            id += 1;
+        }
+        if delete_id !=-1 {
+            let delete_id_usize  = delete_id as usize;
+            self.areas[delete_id_usize].unmap(&mut self.page_table);
+            self.areas.remove(delete_id_usize);
+        }
+        0
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {

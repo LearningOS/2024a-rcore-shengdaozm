@@ -23,7 +23,9 @@ use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-
+use crate::timer::get_time_ms;
+use crate::syscall::process::TaskInfo;
+use crate::config::MAX_SYSCALL_NUM;
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -79,6 +81,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        // change the start_time of the first task
+        next_task.start_time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -141,6 +145,12 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+            
+            // change the start_time of the next task if it is not set
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = get_time_ms();
+            }
+
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -153,6 +163,67 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    /// change the current task's system call times
+    fn change_current_task_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[syscall_id] += 1;
+        drop(inner);
+    }
+
+    /// Get the current task's status.
+    fn get_current_task_status(&self) -> TaskStatus {
+        let inner = self.inner.exclusive_access();
+        let current_task_status = inner.tasks[inner.current_task].task_status;
+        drop(inner);
+        current_task_status
+    }
+
+    /// Get the current task's running time
+    fn get_current_task_running_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current_task_running_time = get_time_ms() - inner.tasks[inner.current_task].start_time;
+        drop(inner);
+        current_task_running_time
+    }
+
+    /// Get the current task's system call times
+    fn get_current_task_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current_task_syscall_times = inner.tasks[inner.current_task].syscall_times;
+        drop(inner);
+        current_task_syscall_times
+    }
+
+    /// Get the current task's taskinfo
+    fn get_current_task_info(&self) -> TaskInfo {
+        let current_task_info = TaskInfo {
+            status: self.get_current_task_status(),
+            syscall_times: self.get_current_task_syscall_times(),
+            time: self.get_current_task_running_time(),
+        };
+        current_task_info
+    }
+
+    /// map
+    fn task_mmap(&self, start: usize, len: usize,port : usize) ->isize{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let ret = inner.tasks[current].memory_set.map(start, len, port);
+        drop(inner);
+        ret
+    }
+
+    /// unmap 
+    fn task_unmap(&self, start: usize, len: usize) ->isize{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let ret = inner.tasks[current].memory_set.unmap(start, len);
+        drop(inner);
+        ret
+    }
+
 }
 
 /// Run the first task in task list.
@@ -201,4 +272,24 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// change the current task's system call times
+pub fn change_current_task_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.change_current_task_syscall_times(syscall_id)
+}
+
+/// Get the current task's taskinfo
+pub fn get_current_task_info() -> TaskInfo {
+    TASK_MANAGER.get_current_task_info()
+}
+
+/// map
+pub fn task_mmap(start: usize, len: usize,port : usize) ->isize{
+    TASK_MANAGER.task_mmap(start, len,port)
+}
+
+/// unmap
+pub fn task_unmap(start: usize, len: usize) ->isize{
+    TASK_MANAGER.task_unmap(start, len)
 }

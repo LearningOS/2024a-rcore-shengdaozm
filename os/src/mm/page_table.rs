@@ -1,20 +1,31 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
+//use core::ptr;
+
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use crate::mm::PhysAddr;
 
 bitflags! {
     /// page table entry flags
     pub struct PTEFlags: u8 {
+        /// Valid
         const V = 1 << 0;
+        /// Readable
         const R = 1 << 1;
+        /// Writable
         const W = 1 << 2;
+        /// Executable
         const X = 1 << 3;
+        /// User
         const U = 1 << 4;
+        /// Global
         const G = 1 << 5;
+        /// Accessed
         const A = 1 << 6;
+        /// Dirty
         const D = 1 << 7;
     }
 }
@@ -147,6 +158,7 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
@@ -170,4 +182,17 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// get the physical pagenumber of a virtual ptr
+/// remark: in this function, if I get ppn as PhysPageNum, and translate it to usize, it will cause error.
+/// but if I get ppn as PhysAddr, and translate it to usize, it will be fine.
+pub fn get_datawrite_phys_addr<T>(token: usize, ptr: * mut T) -> &'static mut T{
+    let page_table = PageTable::from_token(token);
+    let virt_addr = VirtAddr::from(ptr as usize);
+    let ppn : PhysAddr= page_table.find_pte(virt_addr.floor()).unwrap().ppn().into();
+    let ppn_usize : usize = ppn.into();
+    let offset = virt_addr.page_offset();
+    let phys_addr = PhysAddr::from(ppn_usize + offset);
+    phys_addr.get_mut()
 }
