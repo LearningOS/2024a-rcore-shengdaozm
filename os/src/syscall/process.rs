@@ -1,4 +1,6 @@
 //! Process management syscalls
+use core::borrow::BorrowMut;
+
 use alloc::sync::Arc;
 
 use crate::{
@@ -195,14 +197,13 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
 /// need to return 0 in the son process???
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn ",
         current_task().unwrap().pid.0
     );
     // get the ppn and path
-    let token = current_user_token();
-    let path = translated_str(token, path);
+    let path = translated_str(current_user_token(), path);
     
     //get elf data
     let elf_data = match get_app_data_by_name(path.as_str()) {
@@ -211,22 +212,22 @@ pub fn sys_spawn(_path: *const u8) -> isize {
     };
 
     let new_task =Arc::new( TaskControlBlock::new(elf_data));
-    let new_pid = new_task.pid.0;
+    let new_pid = new_task.getpid();
     
     //==change the parent and child relationship==
     let current_task = current_task().unwrap();
-    let mut inner = current_task.inner_exclusive_access();
-    inner.children.push(Arc::clone(&new_task));
+    let mut par_inner = current_task.inner_exclusive_access();
+    par_inner.children.push(new_task.clone());
     // set the parent of new_task
     let par = Some(Arc::downgrade(&current_task));
     let mut new_task_inner =new_task.inner_exclusive_access();
     new_task_inner.parent = par;
-    
+    drop(new_task_inner);
     //drop parent
-    drop(inner);
+    drop(par_inner);
 
     // add new task to scheduler
-    add_task(new_task.clone());
+    add_task(new_task);
     new_pid as isize
 }
 
@@ -239,8 +240,8 @@ pub fn sys_set_priority(prio: isize) -> isize {
     if prio <= 1 {
         return -1;
     } 
-    let task = current_task().unwrap();
-    let inner = task.inner_exclusive_access();
-
+    let mut task = current_task().unwrap();
+    let task = task.borrow_mut();
+    task.set_priority(prio as usize);
     prio as isize
 }

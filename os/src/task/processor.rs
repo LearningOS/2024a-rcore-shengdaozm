@@ -74,6 +74,7 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
+            info!("switch task successfully");
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

@@ -9,8 +9,6 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
 use crate::timer::get_time_ms;
-use core::cmp::{PartialEq, Ordering};
-
 
 // use syscall::process::Taskinfo;
 
@@ -274,6 +272,15 @@ impl TaskControlBlock {
             None
         }
     }
+
+    
+    ///set the task priority
+    pub fn set_priority(self: &mut Arc<Self>, prio: usize) {
+        unsafe {
+            Arc::get_mut_unchecked(self).stride.set_priority(prio);
+        }
+    }
+
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -299,32 +306,26 @@ pub struct Stride {
     big_stride: usize
 }
 
-impl PartialEq for Stride {
-    fn eq(&self, _: &Self) -> bool {
-        false
-    }
-}
-
-impl PartialOrd for Stride {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        PartialOrd::partial_cmp(&self.stride, &other.stride)
-    }
-}
-
 impl Stride {
     /// create a new stride with default value
     pub fn new() -> Self {
         Self {
             stride: 0,
             priority: 16,
-            big_stride: 1234567890
+            big_stride: 160000
         }
     }
     /// set the stride of the process
     pub fn set_priority(&mut self, prio: usize) {
         self.priority = prio;
     }
-    pub fn accumulate(&mut self) {
+    /// accumulate the stride of the process
+    pub fn change(&mut self) {
         self.stride += self.big_stride / self.priority
+    }
+
+    /// get the stride of the process
+    pub fn get_stride(&self) -> usize {
+        self.stride
     }
 }
