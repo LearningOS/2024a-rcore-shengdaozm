@@ -8,6 +8,10 @@ use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use crate::timer::get_time_ms;
+use core::cmp::{PartialEq, Ordering};
+
+
 // use syscall::process::Taskinfo;
 
 /// Task control block structure
@@ -23,6 +27,9 @@ pub struct TaskControlBlock {
 
     /// Mutable
     inner: UPSafeCell<TaskControlBlockInner>,
+
+    ///the stride of the processer
+    pub stride: Stride,
 }
 
 impl TaskControlBlock {
@@ -86,12 +93,30 @@ impl TaskControlBlockInner {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    fn get_status(&self) -> TaskStatus {
+    /// set the task status
+    pub fn get_status(&self) -> TaskStatus {
         self.task_status
     }
+    /// judge if the task is running
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
+
+    /// get the task running time
+    pub fn get_running_time(&self) -> usize {
+        get_time_ms() - self.start_time
+    }
+
+    ///change the task syscalls times
+    pub fn change_syscall_times(&mut self, syscall_id: usize) {
+        self.syscall_times[syscall_id] += 1;
+    }
+
+    /// get the task syscalls times
+    pub fn get_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        self.syscall_times
+    }
+
 }
 
 impl TaskControlBlock {
@@ -129,6 +154,7 @@ impl TaskControlBlock {
                     start_time: 0,
                 })
             },
+            stride: Stride::new(),
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
@@ -204,6 +230,7 @@ impl TaskControlBlock {
                     start_time: 0,
                 })
             },
+            stride: Stride::new(),
         });
         // add child
         parent_inner.children.push(task_control_block.clone());
@@ -260,4 +287,44 @@ pub enum TaskStatus {
     Running,
     /// exited
     Zombie,
+}
+
+/// A struct to represent the stride of the process
+pub struct Stride {
+    /// the stride of the process
+    stride: usize,
+    /// the priority of the process
+    priority: usize,
+    /// the big stride of the process
+    big_stride: usize
+}
+
+impl PartialEq for Stride {
+    fn eq(&self, _: &Self) -> bool {
+        false
+    }
+}
+
+impl PartialOrd for Stride {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&self.stride, &other.stride)
+    }
+}
+
+impl Stride {
+    /// create a new stride with default value
+    pub fn new() -> Self {
+        Self {
+            stride: 0,
+            priority: 16,
+            big_stride: 1234567890
+        }
+    }
+    /// set the stride of the process
+    pub fn set_priority(&mut self, prio: usize) {
+        self.priority = prio;
+    }
+    pub fn accumulate(&mut self) {
+        self.stride += self.big_stride / self.priority
+    }
 }
