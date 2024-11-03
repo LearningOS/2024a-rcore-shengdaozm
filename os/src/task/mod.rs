@@ -117,12 +117,22 @@ pub fn add_initproc() {
     add_task(INITPROC.clone());
 }
 
-pub fn change_current_task_syscall_times(syscall_id:usize) {
-    let task = take_current_task().unwrap();
+pub fn change_current_task_syscall_times(syscall_id:usize) ->usize{
+    //info!("syscall_times change ==>syscall_id:{} , pid:{}",syscall_id,current_task().unwrap().getpid());
+    // why use this? pid 0 is what?
+    let task = match current_task() {
+        Some(t) => t,
+        _ => {
+            println!("THIS");
+            return 1
+        }
+    };
     let mut task_inner = task.inner_exclusive_access();
     task_inner.syscall_times[syscall_id] += 1;
-    drop(task_inner);
-    drop(task);
+    //info!("syscall_times change finished==>syscall_id:{} , pid:{}",syscall_id,task.getpid());
+    //drop(task_inner);
+    //drop(task);
+    0
 }
 
 /// get the current task's taskinfo
@@ -141,7 +151,7 @@ pub fn get_current_taskinfo() -> TaskInfo {
 
 /// task map function
 pub fn task_map(start:usize,len:usize,port:usize) ->isize {
-    let task = take_current_task().unwrap();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let ret = task_inner.memory_set.map(start,len,port);
     drop(task_inner);
@@ -151,7 +161,7 @@ pub fn task_map(start:usize,len:usize,port:usize) ->isize {
 
 /// task unmap
 pub fn task_unmap(start:usize,len:usize) ->isize {
-    let task = take_current_task().unwrap();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let ret = task_inner.memory_set.unmap(start,len);
     drop(task_inner);

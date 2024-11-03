@@ -62,7 +62,7 @@ pub fn run_tasks() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
-            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext; //task_cx is next task?
+            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
             // a problem here 
             if task_inner.start_time == 0 {
@@ -74,7 +74,7 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
-            info!("switch task successfully");
+            //info!("switching task......");
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

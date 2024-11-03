@@ -24,9 +24,10 @@ impl TaskManager {
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
         if self.ready_queue.is_empty() {
-            println!("no task !!!");
+            info!("no task !!!");
             return None;
         } else {
+            //info !("fetch task,and task left num is {}",self.ready_queue.len());
             let mut idx:usize = 0;
             let mut stride_tmp:usize= 160000000;
             for i in 0..self.ready_queue.len() {
