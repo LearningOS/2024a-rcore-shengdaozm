@@ -9,7 +9,7 @@ use crate::{
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, TaskStatus,get_current_taskinfo,task_map, task_unmap, 
-        TaskControlBlock,
+        //TaskControlBlock,
     },
     timer::get_time_us,
 };
@@ -198,24 +198,16 @@ pub fn sys_spawn(path: *const u8) -> isize {
     );
     // get the ppn and path
     let path = translated_str(current_user_token(), path);
-    trace!("app_name:{}",path);
+    //trace!("app_name:{}",path);
     //get elf data
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let elf_data = app_inode.read_all();
-        trace!("====got the elf data=====");
-        let new_task =Arc::new( TaskControlBlock::new(&elf_data));
-        trace!("====created a new task successfully=====");
-    
-        //==change the parent and child relationship==
+        //trace!("====got the elf data=====");
         let current_task = current_task().unwrap();
-        // the father add the child
-        current_task.inner_exclusive_access().children.push(new_task.clone());
-        // the child set the parent
-        new_task.inner_exclusive_access().parent = Some(Arc::downgrade(&current_task));
-
-        // add new task to scheduler
-        add_task(new_task.clone());
-        return new_task.getpid() as isize;
+        //========here ,there is a problem, if implement spawn in the function,we will find that the elf file cant be created
+        //especially the app named "ch5_getpid",if can be fixed by implement spawn in the task.rs
+        // I dont know why.
+        return current_task.spawn(&elf_data);
     } else {
         debug!("kernel:pid[{}] sys_spawn failed to open file {}", current_task().unwrap().pid.0, path.as_str());
         return -1;
