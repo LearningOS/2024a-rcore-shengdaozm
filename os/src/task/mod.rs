@@ -36,6 +36,8 @@ pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
     Processor,
 };
+pub use crate::syscall::process::TaskInfo;
+
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -119,4 +121,54 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// Change the current task's syscall times
+pub fn change_current_task_syscall_times(syscall_id:usize) ->usize{
+    //info!("syscall_times change ==>syscall_id:{} , pid:{}",syscall_id,current_task().unwrap().getpid());
+    // why use this? pid 0 is what?
+    let task = match current_task() {
+        Some(t) => t,
+        _ => {
+            println!("erroe to get current task!");
+            return 1
+        }
+    };
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.syscall_times[syscall_id] += 1;
+    0
+}
+
+/// get the current task's taskinfo
+pub fn get_current_taskinfo() -> TaskInfo {
+    let task = take_current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    TaskInfo {
+        status : task_inner.get_status(),
+        time :task_inner.get_running_time(),
+        syscall_times : task_inner.get_syscall_times(),
+    }
+    //drop(task_inner);
+    //drop(task);
+    //taskinfo
+}
+
+/// task map function
+pub fn task_map(start:usize,len:usize,port:usize) ->isize {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let ret = task_inner.memory_set.map(start,len,port);
+    drop(task_inner);
+    drop(task);
+    ret
+}
+
+/// task unmap
+pub fn task_unmap(start:usize,len:usize) ->isize {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let ret = task_inner.memory_set.unmap(start,len);
+    drop(task_inner);
+    drop(task);
+    ret
 }

@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{TRAP_CONTEXT_BASE,MAX_SYSCALL_NUM};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
@@ -10,6 +10,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use crate::timer::get_time_ms;
 
 /// Task control block structure
 ///
@@ -24,6 +25,9 @@ pub struct TaskControlBlock {
 
     /// Mutable
     inner: UPSafeCell<TaskControlBlockInner>,
+
+    ///the stride of the processer
+    pub stride: Stride,
 }
 
 impl TaskControlBlock {
@@ -71,21 +75,36 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// sys_call times
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    /// the start time of the task
+    pub start_time: usize,
 }
 
 impl TaskControlBlockInner {
+    /// Get the trap context of the current process
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
     }
+
+    /// Get the user token of the current process
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    fn get_status(&self) -> TaskStatus {
+
+    /// Get the status of the current process
+    pub fn get_status(&self) -> TaskStatus {
         self.task_status
     }
+
+    /// judge if the task is running
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
+
+    /// info
     pub fn alloc_fd(&mut self) -> usize {
         if let Some(fd) = (0..self.fd_table.len()).find(|fd| self.fd_table[*fd].is_none()) {
             fd
@@ -93,6 +112,21 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
+
+    /// get the task running time
+    pub fn get_running_time(&self) -> usize {
+        get_time_ms() - self.start_time
+    }
+
+    ///change the task syscalls times
+    pub fn change_syscall_times(&mut self, syscall_id: usize) {
+        self.syscall_times[syscall_id] += 1;
+    }
+
+    /// get the task syscalls times
+    pub fn get_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        self.syscall_times
     }
 }
 
@@ -135,8 +169,11 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: 0,
                 })
             },
+            stride: Stride::new(),
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
@@ -216,8 +253,11 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: 0,
                 })
             },
+            stride: Stride::new(),
         });
         // add child
         parent_inner.children.push(task_control_block.clone());
@@ -261,6 +301,13 @@ impl TaskControlBlock {
             None
         }
     }
+
+    ///set the task priority
+    pub fn set_priority(self: &mut Arc<Self>, prio: usize) {
+        unsafe {
+            Arc::get_mut_unchecked(self).stride.set_priority(prio);
+        }
+    }    
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -274,4 +321,38 @@ pub enum TaskStatus {
     Running,
     /// exited
     Zombie,
+}
+
+/// A struct to represent the stride of the process
+pub struct Stride {
+    /// the stride of the process
+    stride: usize,
+    /// the priority of the process
+    priority: usize,
+    /// the big stride of the process
+    big_stride: usize
+}
+
+impl Stride {
+    /// create a new stride with default value
+    pub fn new() -> Self {
+        Self {
+            stride: 0,
+            priority: 16,
+            big_stride: 160000
+        }
+    }
+    /// set the stride of the process
+    pub fn set_priority(&mut self, prio: usize) {
+        self.priority = prio;
+    }
+    /// accumulate the stride of the process
+    pub fn change(&mut self) {
+        self.stride += self.big_stride / self.priority
+    }
+
+    /// get the stride of the process
+    pub fn get_stride(&self) -> usize {
+        self.stride
+    }
 }
